@@ -1,0 +1,22 @@
+[project]
+name = "recipe-transcription-backend"
+version = "0.1.0"
+description = "Backend for Recipe Transcription App"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+    "requests",
+    "faster-whisper",
+    "sqlalchemy",
+    "pydantic",
+    "fpdf"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = []

@@ -25,3 +25,6 @@ Thumbs.db
 
 # Database
 *.db
+
+# Logs
+logs*.txt

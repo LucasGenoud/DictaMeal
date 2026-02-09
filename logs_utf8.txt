@@ -1,8 +1,0 @@
-﻿INFO:     172.18.0.3:55632 - "GET /api/recipes HTTP/1.0" 200 OK
-INFO:     172.18.0.3:36268 - "POST /api/transcribe HTTP/1.0" 200 OK
-Using Ollama model: qwen3:4b
-Ollama error: Expecting value: line 1 column 1 (char 0)
-INFO:     172.18.0.3:36274 - "POST /api/structure HTTP/1.0" 200 OK
-Using Ollama model: qwen3:4b
-Ollama error: Expecting value: line 1 column 1 (char 0)
-INFO:     172.18.0.1:49858 - "POST /api/structure HTTP/1.1" 200 OK

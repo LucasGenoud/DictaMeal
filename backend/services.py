@@ -1,3 +1,4 @@
+"""DictaMeal backend services for transcription, recipe structuring, and storage."""
 import json
 import requests
 import asyncio
@@ -7,7 +8,28 @@ import os
 from models import SessionLocal, RecipeDB, RecipeCreate, RecipeUpdate, engine, Base
 from fpdf import FPDF
 
-# Init DB
+# JSON schema for structured recipe output from LLM
+RECIPE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "description": {"type": "string"},
+        "ingredients": {
+            "type": "array",
+            "items": {"type": "string"}
+        },
+        "steps": {
+            "type": "array",
+            "items": {"type": "string"}
+        },
+        "duration": {"type": "string"},
+        "origin": {"type": "string"},
+        "meal_type": {"type": "string"}
+    },
+    "required": ["title", "description", "ingredients", "steps", "duration", "origin", "meal_type"]
+}
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
@@ -67,6 +89,25 @@ class OllamaService:
             print(f"Failed to fetch models: {e}")
             return "llama3"
 
+    def _parse_llm_response(self, raw_response: str) -> dict:
+        """Clean and parse LLM JSON response, handling markdown code blocks."""
+        clean = raw_response.strip()
+        if "```json" in clean:
+            clean = clean.split("```json")[1].split("```")[0].strip()
+        elif "```" in clean:
+            clean = clean.split("```")[1].split("```")[0].strip()
+        
+        # Locate the first '{' and last '}'
+        start = clean.find("{")
+        end = clean.rfind("}")
+        if start != -1 and end != -1:
+            clean = clean[start:end+1]
+        
+        if not clean:
+            raise ValueError("Empty or invalid response from Ollama")
+        
+        return json.loads(clean)
+
 
     async def structure_recipe(self, text: str):
         model_name = await self._get_model_name()
@@ -92,31 +133,10 @@ class OllamaService:
         "{text}"
         """
         
-        # Define the JSON schema for structured output
-        recipe_schema = {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string"},
-                "description": {"type": "string"},
-                "ingredients": {
-                    "type": "array",
-                    "items": {"type": "string"}
-                },
-                "steps": {
-                    "type": "array",
-                    "items": {"type": "string"}
-                },
-                "duration": {"type": "string"},
-                "origin": {"type": "string"},
-                "meal_type": {"type": "string"}
-            },
-            "required": ["title", "description", "ingredients", "steps", "duration", "origin", "meal_type"]
-        }
-        
         payload = {
             "model": model_name,
             "prompt": prompt,
-            "format": recipe_schema,
+            "format": RECIPE_SCHEMA,
             "stream": False
         }
         
@@ -132,25 +152,7 @@ class OllamaService:
 
             print(f"DEBUG: Ollama raw response: {raw_response}")
 
-            # Clean up potential markdown code blocks and find JSON
-            clean_response = raw_response.strip()
-            if "```json" in clean_response:
-                clean_response = clean_response.split("```json")[1].split("```")[0].strip()
-            elif "```" in clean_response:
-                 clean_response = clean_response.split("```")[1].split("```")[0].strip()
-            
-            # Locate the first '{' and last '}'
-            start = clean_response.find("{")
-            end = clean_response.rfind("}")
-            if start != -1 and end != -1:
-                clean_response = clean_response[start:end+1]
-            
-            if not clean_response:
-                 print("ERROR: clean_response is empty after cleaning")
-                 raise ValueError("Empty or invalid response from Ollama")
-
-            print(f"DEBUG: Parsed JSON string: {clean_response[:200]}...")
-            return json.loads(clean_response)
+            return self._parse_llm_response(raw_response)
         except Exception as e:
             print(f"Ollama error: {e}")
             import traceback
@@ -205,31 +207,10 @@ class OllamaService:
         - "meal_type"
         """
         
-        # Define the JSON schema for structured output
-        recipe_schema = {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string"},
-                "description": {"type": "string"},
-                "ingredients": {
-                    "type": "array",
-                    "items": {"type": "string"}
-                },
-                "steps": {
-                    "type": "array",
-                    "items": {"type": "string"}
-                },
-                "duration": {"type": "string"},
-                "origin": {"type": "string"},
-                "meal_type": {"type": "string"}
-            },
-            "required": ["title", "description", "ingredients", "steps", "duration", "origin", "meal_type"]
-        }
-        
         payload = {
             "model": model_name,
             "prompt": prompt,
-            "format": recipe_schema,
+            "format": RECIPE_SCHEMA,
             "stream": False
         }
 
@@ -246,23 +227,7 @@ class OllamaService:
 
             print(f"DEBUG: Ollama raw response: {raw_response}")
 
-            # Clean up potential markdown code blocks and find JSON
-            clean_response = raw_response.strip()
-            if "```json" in clean_response:
-                clean_response = clean_response.split("```json")[1].split("```")[0].strip()
-            elif "```" in clean_response:
-                 clean_response = clean_response.split("```")[1].split("```")[0].strip()
-            
-            # Locate the first '{' and last '}'
-            start = clean_response.find("{")
-            end = clean_response.rfind("}")
-            if start != -1 and end != -1:
-                clean_response = clean_response[start:end+1]
-            
-            if not clean_response:
-                 raise ValueError("Empty or invalid response from Ollama")
-
-            result_recipe = json.loads(clean_response)
+            result_recipe = self._parse_llm_response(raw_response)
 
             # Validate required fields
             required_fields = ["title", "ingredients", "steps"]
@@ -297,12 +262,7 @@ class OllamaService:
             raise e
 
 class RecipeService:
-    def get_db(self):
-        db = SessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
+    """Service for CRUD operations on recipes with PDF generation."""
 
     def create_recipe(self, recipe: RecipeCreate):
         db = SessionLocal()

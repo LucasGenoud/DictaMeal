@@ -30,18 +30,7 @@
         >
           Discard
         </button>
-        <div class="flex items-center gap-3 mr-4">
-          <input 
-            type="checkbox" 
-            id="useSearch" 
-            v-model="useSearch"
-            class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 transition-colors"
-          >
-          <label for="useSearch" class="text-sm font-medium text-gray-700 cursor-pointer select-none">
-            Enhance with Web Search
-          </label>
-        </div>
-        
+
         <button 
           @click="structureRecipe" 
           :disabled="isStructuring || !localTranscription.trim()"
@@ -227,7 +216,6 @@ const handleImageUpload = (event) => {
 
 const localTranscription = ref(props.initialTranscription || '');
 const isStructuring = ref(false);
-const useSearch = ref(false);
 const recipe = ref({
   title: '',
   description: '',
@@ -265,10 +253,12 @@ watch(() => props.initialRecipe, (val) => {
 const structureRecipe = async () => {
   isStructuring.value = true;
   try {
-    const res = await api.structure(localTranscription.value, useSearch.value);
+    const res = await api.structure(localTranscription.value);
     const structured = res.data;
     recipe.value = {
       ...structured,
+      ingredients: structured.ingredients || [],
+      steps: structured.steps || [],
       original_transcription: localTranscription.value
     };
     emit('structured', recipe.value);

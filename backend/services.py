@@ -6,7 +6,6 @@ from faster_whisper import WhisperModel
 import os
 from models import SessionLocal, RecipeDB, RecipeCreate, RecipeUpdate, engine, Base
 from fpdf import FPDF
-from duckduckgo_search import DDGS
 
 # Init DB
 def init_db():
@@ -68,38 +67,13 @@ class OllamaService:
             print(f"Failed to fetch models: {e}")
             return "llama3"
 
-    def _search_recipe(self, query: str):
-        print(f"Searching web for recipe: {query}")
-        try:
-            with DDGS() as ddgs:
-                results = list(ddgs.text(query, max_results=3))
-                if results:
-                    return "\\n\\n".join([f"Title: {r['title']}\\nBody: {r['body']}" for r in results])
-        except Exception as e:
-            print(f"Search failed: {e}")
-        return None
 
-    async def structure_recipe(self, text: str, use_search: bool = False):
+    async def structure_recipe(self, text: str):
         model_name = await self._get_model_name()
         print(f"Using Ollama model: {model_name}")
 
-        search_context = ""
-        if use_search:
-            print("Web search requested. Searching...")
-            # Use the first 50 chars as query if text is long, or the whole text
-            query = text[:100].replace("\n", " ") 
-            search_results = self._search_recipe(f"recipe for {query}")
-            if search_results:
-                 print("Found search results.")
-                 search_context = f"""
-                 I have searched the web and found the following details which you MUST use to construct the recipe:
-                 
-                 {search_results}
-                 """
-
         prompt = f"""
         You are a smart recipe assistant. Your goal is to extract structured recipe data from the raw text provided below.
-        {search_context}
         
         Instructions:
         1. Analyze the text to identify the recipe name, ingredients, instructions, and context.
@@ -118,10 +92,31 @@ class OllamaService:
         "{text}"
         """
         
+        # Define the JSON schema for structured output
+        recipe_schema = {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "ingredients": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                },
+                "duration": {"type": "string"},
+                "origin": {"type": "string"},
+                "meal_type": {"type": "string"}
+            },
+            "required": ["title", "description", "ingredients", "steps", "duration", "origin", "meal_type"]
+        }
+        
         payload = {
             "model": model_name,
             "prompt": prompt,
-            "format": "json",
+            "format": recipe_schema,
             "stream": False
         }
         
@@ -151,8 +146,10 @@ class OllamaService:
                 clean_response = clean_response[start:end+1]
             
             if not clean_response:
+                 print("ERROR: clean_response is empty after cleaning")
                  raise ValueError("Empty or invalid response from Ollama")
 
+            print(f"DEBUG: Parsed JSON string: {clean_response[:200]}...")
             return json.loads(clean_response)
         except Exception as e:
             print(f"Ollama error: {e}")
@@ -162,10 +159,11 @@ class OllamaService:
                 raw_response = locals().get("raw_response", "N/A")
             except:
                 raw_response = "N/A"
+            print(f"DEBUG: Falling back to error recipe due to: {e}")
             # Fallback mock for testing if offline or error
             return {
-                "title": "Error/Mock Recipe",
-                "description": f"Ollama error: {str(e)}. Raw: {raw_response[:200]}",
+                "title": "Error generating recipe",
+                "description": f"An error occurred while generating the recipe: {str(e)}. Please try again.",
                 "ingredients": [],
                 "steps": [],
                 "duration": "N/A",

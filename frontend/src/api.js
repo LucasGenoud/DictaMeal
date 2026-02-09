@@ -17,8 +17,8 @@ export default {
             timeout: 300000 // 5 minutes
         });
     },
-    structure(text, useSearch = false) {
-        return api.post('/structure', { text, use_search: useSearch });
+    structure(text) {
+        return api.post('/structure', { text });
     },
     createRecipe(recipe) {
         return api.post('/recipes', recipe);

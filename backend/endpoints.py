@@ -19,12 +19,11 @@ async def transcribe_audio(file: UploadFile = File(...)):
 
 class StructureRequest(BaseModel):
     text: str
-    use_search: bool = False
 
 @router.post("/structure")
 async def structure_recipe(request: StructureRequest):
     try:
-        structured_data = await ollama_service.structure_recipe(request.text, request.use_search)
+        structured_data = await ollama_service.structure_recipe(request.text)
         return structured_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

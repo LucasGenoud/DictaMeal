@@ -104,6 +104,15 @@
                 @save="handleSave"
             />
         </div>
+
+        <div v-if="view === 'read'">
+             <RecipeDetail 
+                :recipe="currentRecipe"
+                @back="view = 'list'"
+                @edit="view = 'edit'"
+                @update="handleRecipeAIUpdate"
+            />
+        </div>
       </section>
     </main>
   </div>
@@ -115,6 +124,7 @@ import { BookOpenIcon, PlusIcon, ArrowLeftIcon, Cog6ToothIcon, CheckCircleIcon, 
 import AudioRecorder from './components/AudioRecorder.vue';
 import RecipeList from './components/RecipeList.vue';
 import RecipeForm from './components/RecipeForm.vue';
+import RecipeDetail from './components/RecipeDetail.vue';
 import api from './api';
 
 const view = ref('list'); // 'list', 'record', 'transcription_review', 'edit'
@@ -174,10 +184,17 @@ const handleSave = async (savedRecipe) => {
     showNotification("Recipe saved successfully!");
 };
 
+const handleRecipeAIUpdate = (updatedRecipe) => {
+    currentRecipe.value = updatedRecipe;
+    const index = recipes.value.findIndex(r => r.id === updatedRecipe.id);
+    if (index !== -1) recipes.value[index] = updatedRecipe;
+    showNotification("Recipe updated via AI!");
+};
+
 const selectRecipe = (recipe) => {
     currentRecipe.value = recipe;
     currentTranscription.value = recipe.original_transcription || '';
-    view.value = 'edit';
+    view.value = 'read';
 };
 
 const deleteRecipe = async (id) => {

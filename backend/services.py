@@ -6,6 +6,7 @@ from faster_whisper import WhisperModel
 import os
 from models import SessionLocal, RecipeDB, RecipeCreate, RecipeUpdate, engine, Base
 from fpdf import FPDF
+from duckduckgo_search import DDGS
 
 # Init DB
 def init_db():
@@ -67,12 +68,38 @@ class OllamaService:
             print(f"Failed to fetch models: {e}")
             return "llama3"
 
-    async def structure_recipe(self, text: str):
+    def _search_recipe(self, query: str):
+        print(f"Searching web for recipe: {query}")
+        try:
+            with DDGS() as ddgs:
+                results = list(ddgs.text(query, max_results=3))
+                if results:
+                    return "\\n\\n".join([f"Title: {r['title']}\\nBody: {r['body']}" for r in results])
+        except Exception as e:
+            print(f"Search failed: {e}")
+        return None
+
+    async def structure_recipe(self, text: str, use_search: bool = False):
         model_name = await self._get_model_name()
         print(f"Using Ollama model: {model_name}")
 
+        search_context = ""
+        if use_search:
+            print("Web search requested. Searching...")
+            # Use the first 50 chars as query if text is long, or the whole text
+            query = text[:100].replace("\n", " ") 
+            search_results = self._search_recipe(f"recipe for {query}")
+            if search_results:
+                 print("Found search results.")
+                 search_context = f"""
+                 I have searched the web and found the following details which you MUST use to construct the recipe:
+                 
+                 {search_results}
+                 """
+
         prompt = f"""
         You are a smart recipe assistant. Your goal is to extract structured recipe data from the raw text provided below.
+        {search_context}
         
         Instructions:
         1. Analyze the text to identify the recipe name, ingredients, instructions, and context.
@@ -81,8 +108,8 @@ class OllamaService:
         The JSON object must have these exact keys:
         - "title": The name of the recipe.
         - "description": A short summary of the dish, focusing on its origin or backstory.
-        - "ingredients": A list of strings, where each string is an ingredient with its quantity.
-        - "steps": A list of strings, representing the sequential cooking instructions.
+        - "ingredients": A list of strings, where each string is an ingredient with its quantity. IMPORTANT: Convert ALL units to METRIC (g, kg, ml, l). Do NOT use imperial units (oz, lb, cups).
+        - "steps": A list of strings, representing the sequential cooking instructions. Ensure all temperatures are in Celsius.
         - "duration": The estimated cooking time (e.g., "45 minutes"). Infer if not explicitly stated.
         - "origin": The cuisine or country of origin (e.g., "Italian", "Thai"). Infer if not explicitly stated.
         - "meal_type": The category of meal (e.g., "Dinner", "Dessert"). Infer if not explicitly stated.
@@ -131,7 +158,10 @@ class OllamaService:
             print(f"Ollama error: {e}")
             import traceback
             traceback.print_exc()
-            raw_response = locals().get("raw_response", "N/A")
+            try:
+                raw_response = locals().get("raw_response", "N/A")
+            except:
+                raw_response = "N/A"
             # Fallback mock for testing if offline or error
             return {
                 "title": "Error/Mock Recipe",
@@ -142,6 +172,131 @@ class OllamaService:
                 "origin": "N/A",
                 "meal_type": "N/A"
             }
+
+    async def edit_recipe_with_instruction(self, current_recipe: dict, instruction: str):
+        model_name = await self._get_model_name()
+        print(f"Using Ollama model: {model_name}")
+
+        # Create a copy of the recipe to modify for the prompt
+        recipe_for_prompt = current_recipe.copy()
+        # Remove heavy image data from the prompt
+        if "image_data" in recipe_for_prompt:
+            del recipe_for_prompt["image_data"]
+
+        prompt = f"""
+        You are a smart recipe assistant. Your goal is to modify an existing recipe based on the user's instruction.
+        
+        Instructions:
+        1. Read the existing recipe JSON and the user's instruction.
+        2. Modify the recipe fields according to the instruction.
+        3. Return ONLY the modified raw JSON object. Do NOT use markdown code blocks.
+        
+        Existing Recipe:
+        {json.dumps(recipe_for_prompt, indent=2)}
+        
+        User Instruction:
+        "{instruction}"
+        
+        The JSON object must keep the exact same structure as the input:
+        - "title"
+        - "description"
+        - "ingredients" (list of strings, use METRIC units)
+        - "steps" (list of strings, ensure temperatures are Celsius)
+        - "duration"
+        - "origin"
+        - "meal_type"
+        """
+        
+        # Define the JSON schema for structured output
+        recipe_schema = {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "ingredients": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {"type": "string"}
+                },
+                "duration": {"type": "string"},
+                "origin": {"type": "string"},
+                "meal_type": {"type": "string"}
+            },
+            "required": ["title", "description", "ingredients", "steps", "duration", "origin", "meal_type"]
+        }
+        
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "format": recipe_schema,
+            "stream": False
+        }
+
+        
+        try:
+            response = requests.post(f"{self.base_url}/api/generate", json=payload)
+            response.raise_for_status()
+            result = response.json()
+            print(f"DEBUG: Full Ollama response: {result}")
+            
+            raw_response = result.get("response", "")
+            if not raw_response:
+                raw_response = result.get("thinking", "")
+
+            print(f"DEBUG: Ollama raw response: {raw_response}")
+
+            # Clean up potential markdown code blocks and find JSON
+            clean_response = raw_response.strip()
+            if "```json" in clean_response:
+                clean_response = clean_response.split("```json")[1].split("```")[0].strip()
+            elif "```" in clean_response:
+                 clean_response = clean_response.split("```")[1].split("```")[0].strip()
+            
+            # Locate the first '{' and last '}'
+            start = clean_response.find("{")
+            end = clean_response.rfind("}")
+            if start != -1 and end != -1:
+                clean_response = clean_response[start:end+1]
+            
+            if not clean_response:
+                 raise ValueError("Empty or invalid response from Ollama")
+
+            result_recipe = json.loads(clean_response)
+
+            # Validate required fields
+            required_fields = ["title", "ingredients", "steps"]
+            for field in required_fields:
+                if field not in result_recipe:
+                    raise ValueError(f"LLM response missing required field: {field}")
+            
+            # Validate types
+            if not isinstance(result_recipe.get("ingredients"), list):
+                raise ValueError("LLM response 'ingredients' must be a list")
+            if not isinstance(result_recipe.get("steps"), list):
+                raise ValueError("LLM response 'steps' must be a list")
+            
+            # Validate non-empty content
+            if len(result_recipe["ingredients"]) == 0:
+                raise ValueError("LLM response returned empty ingredients list")
+            if len(result_recipe["steps"]) == 0:
+                raise ValueError("LLM response returned empty steps list")
+
+            # Restore preserved fields
+            if "image_data" in current_recipe:
+                result_recipe["image_data"] = current_recipe["image_data"]
+            if "id" in current_recipe and "id" not in result_recipe:
+                result_recipe["id"] = current_recipe["id"]
+            
+            return result_recipe
+        except Exception as e:
+            print(f"Ollama error: {e}")
+            import traceback
+            traceback.print_exc()
+            # Fallback/Error
+            raise e
 
 class RecipeService:
     def get_db(self):
@@ -161,7 +316,8 @@ class RecipeService:
             duration=recipe.duration,
             origin=recipe.origin,
             meal_type=recipe.meal_type,
-            original_transcription=recipe.original_transcription
+            original_transcription=recipe.original_transcription,
+            image_data=recipe.image_data
         )
         db.add(db_recipe)
         db.commit()
@@ -195,6 +351,7 @@ class RecipeService:
             db_recipe.origin = recipe_update.origin
             db_recipe.meal_type = recipe_update.meal_type
             db_recipe.original_transcription = recipe_update.original_transcription
+            db_recipe.image_data = recipe_update.image_data
             db.commit()
             db.refresh(db_recipe)
             db.close()
@@ -258,5 +415,6 @@ class RecipeService:
             "duration": db_recipe.duration,
             "origin": db_recipe.origin,
             "meal_type": db_recipe.meal_type,
-            "original_transcription": db_recipe.original_transcription
+            "original_transcription": db_recipe.original_transcription,
+            "image_data": db_recipe.image_data
         }

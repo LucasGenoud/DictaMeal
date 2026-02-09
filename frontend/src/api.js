@@ -17,8 +17,8 @@ export default {
             timeout: 300000 // 5 minutes
         });
     },
-    structure(text) {
-        return api.post('/structure', { text });
+    structure(text, useSearch = false) {
+        return api.post('/structure', { text, use_search: useSearch });
     },
     createRecipe(recipe) {
         return api.post('/recipes', recipe);
@@ -37,5 +37,8 @@ export default {
     },
     getRecipePdfUrl(id) {
         return `${API_URL}/recipes/${id}/pdf`;
+    },
+    updateRecipeWithInstruction(recipe, instruction) {
+        return api.post('/structure/edit_instruction', { recipe, instruction });
     }
 };

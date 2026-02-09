@@ -30,6 +30,18 @@
         >
           Discard
         </button>
+        <div class="flex items-center gap-3 mr-4">
+          <input 
+            type="checkbox" 
+            id="useSearch" 
+            v-model="useSearch"
+            class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 transition-colors"
+          >
+          <label for="useSearch" class="text-sm font-medium text-gray-700 cursor-pointer select-none">
+            Enhance with Web Search
+          </label>
+        </div>
+        
         <button 
           @click="structureRecipe" 
           :disabled="isStructuring || !localTranscription.trim()"
@@ -67,6 +79,23 @@
             <div class="space-y-1">
                 <label class="block text-sm font-semibold text-gray-700">Description</label>
                 <textarea v-model="recipe.description" rows="3" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-shadow text-gray-700 placeholder-gray-400" placeholder="A brief summary of the dish..."></textarea>
+            </div>
+
+            <div class="space-y-1">
+                <label class="block text-sm font-semibold text-gray-700">Image</label>
+                <div class="flex items-center gap-4">
+                    <div v-if="recipe.image_data" class="relative w-24 h-24 rounded-lg overflow-hidden border border-gray-200 group">
+                        <img :src="recipe.image_data" alt="Recipe Image" class="w-full h-full object-cover" />
+                        <button @click="recipe.image_data = ''" class="absolute inset-0 bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <XMarkIcon class="w-6 h-6" />
+                        </button>
+                    </div>
+                    <label class="cursor-pointer flex items-center justify-center px-4 py-2 border border-blue-200 rounded-lg text-blue-600 bg-blue-50 hover:bg-blue-100 transition-colors">
+                        <CameraIcon class="w-5 h-5 mr-2" />
+                        <span>Upload Photo</span>
+                        <input type="file" class="hidden" accept="image/*" @change="handleImageUpload" />
+                    </label>
+                </div>
             </div>
         </div>
 
@@ -165,7 +194,7 @@
 
 <script setup>
 import { ref, watch, onMounted } from 'vue';
-import { SparklesIcon, XMarkIcon, PlusIcon, CheckIcon, ArrowDownTrayIcon, ClockIcon, GlobeAltIcon, TagIcon } from '@heroicons/vue/24/solid';
+import { SparklesIcon, XMarkIcon, PlusIcon, CheckIcon, ArrowDownTrayIcon, ClockIcon, GlobeAltIcon, TagIcon, CameraIcon } from '@heroicons/vue/24/solid';
 import api from '../api';
 
 const props = defineProps({
@@ -178,9 +207,27 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['save', 'cancel', 'structured']);
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+
+const handleImageUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (file.size > MAX_IMAGE_SIZE) {
+        alert("Image is too large. Please choose an image under 5MB.");
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        recipe.value.image_data = e.target.result;
+    };
+    reader.readAsDataURL(file);
+};
 
 const localTranscription = ref(props.initialTranscription || '');
 const isStructuring = ref(false);
+const useSearch = ref(false);
 const recipe = ref({
   title: '',
   description: '',
@@ -189,7 +236,8 @@ const recipe = ref({
   duration: '',
   origin: '',
   meal_type: '',
-  original_transcription: ''
+  original_transcription: '',
+  image_data: ''
 });
 const recipeId = ref(null);
 
@@ -217,7 +265,7 @@ watch(() => props.initialRecipe, (val) => {
 const structureRecipe = async () => {
   isStructuring.value = true;
   try {
-    const res = await api.structure(localTranscription.value);
+    const res = await api.structure(localTranscription.value, useSearch.value);
     const structured = res.data;
     recipe.value = {
       ...structured,

@@ -25,6 +25,7 @@ class RecipeDB(Base):
     origin = Column(String, nullable=True)
     meal_type = Column(String, nullable=True)
     original_transcription = Column(Text, nullable=True)
+    image_data = Column(Text, nullable=True)
 
 # Pydantic models
 class RecipeBase(BaseModel):
@@ -36,6 +37,7 @@ class RecipeBase(BaseModel):
     origin: Optional[str] = None
     meal_type: Optional[str] = None
     original_transcription: Optional[str] = None
+    image_data: Optional[str] = None
 
 class RecipeCreate(RecipeBase):
     pass

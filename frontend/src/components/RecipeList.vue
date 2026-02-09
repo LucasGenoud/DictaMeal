@@ -21,13 +21,13 @@
     >
       <div class="h-48 bg-gray-100 relative overflow-hidden">
         <img 
-          v-if="recipe.imageUrl" 
-          :src="recipe.imageUrl" 
+          v-if="recipe.image_data" 
+          :src="recipe.image_data" 
           alt="Recipe Image" 
           class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
         />
         <div v-else class="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-indigo-50 to-purple-50 text-indigo-200">
-           <CakeIcon class="w-16 h-16 opacity-50 mb-2" />
+           <PhotoIcon class="w-16 h-16 opacity-50 mb-2" />
            <span class="text-xs font-medium uppercase tracking-wider text-indigo-300">No Image</span>
         </div>
         
@@ -65,7 +65,7 @@
 </template>
 
 <script setup>
-import { CakeIcon, ClockIcon, GlobeAltIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline';
+import { PhotoIcon, ClockIcon, GlobeAltIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline';
 
 defineProps({
   recipes: {

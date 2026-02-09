@@ -19,12 +19,25 @@ async def transcribe_audio(file: UploadFile = File(...)):
 
 class StructureRequest(BaseModel):
     text: str
+    use_search: bool = False
 
 @router.post("/structure")
 async def structure_recipe(request: StructureRequest):
     try:
-        structured_data = await ollama_service.structure_recipe(request.text)
+        structured_data = await ollama_service.structure_recipe(request.text, request.use_search)
         return structured_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class RecipeInstructionRequest(BaseModel):
+    recipe: dict
+    instruction: str
+
+@router.post("/structure/edit_instruction")
+async def edit_recipe_instruction(request: RecipeInstructionRequest):
+    try:
+        updated_recipe = await ollama_service.edit_recipe_with_instruction(request.recipe, request.instruction)
+        return updated_recipe
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
